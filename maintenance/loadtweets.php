@@ -191,8 +191,15 @@
 		echo l(good("Updated favorites!"));
 	}
 	
+	function importSearchTweets($p) {
+		// not sure but it seems good to have its own function for this since we may also need other DB tables to store search results?
+		// 
+	}
+
+
 	if($p){
 		importTweets($p);
+		importSearchTweets($p);
 	} else {
 		$q = $db->query("SELECT * FROM `".DTP."tweetusers` WHERE `enabled` = '1'");
 		if($db->numRows($q) > 0){
