@@ -191,9 +191,124 @@
 		echo l(good("Updated favorites!"));
 	}
 	
+
+	/**
+	 * New function to retrieve search results for event specific tags
+	 * author: jlh2199@columbia.edu 10/21/12
+	 */
 	function importSearchTweets($p) {
-		// not sure but it seems good to have its own function for this since we may also need other DB tables to store search results?
-		// 
+		global $twitterApi, $db, $config, $access, $search;
+		$p = trim($p);
+
+		if(!$twitterApi->validateUserParam($p)){ return false; }
+			$maxCount = 200;
+			$tweets   = array();
+			$sinceID  = 0;
+			$maxID    = 0;
+		
+		echo l("Importing:\n");
+		
+		// Do we already have tweets?
+		$pd = $twitterApi->getUserParam($p);
+		if($pd['name'] == "screen_name"){
+			$uid        = $twitterApi->getUserId($pd['value']);
+			$screenname = $pd['value'];
+		} else {
+			$uid        = $pd['value'];
+			$screenname = $twitterApi->getScreenName($pd['value']);
+		}
+
+		// set interval
+		$interval_back = 14; // go back 14 days
+		$tag = '%23wood';
+
+		$a_day = 24 * 60 * 60;
+		$today = date('mdy');
+		$time = time();
+
+		$date_range = array();
+		$date_range[] = array($tag . $today, date('Y-m-d'));
+
+		// populate the tags we want to look for 
+		for($x = 1; $x < ($interval_back+1); $x++) {
+			$time -= $a_day;
+			$new_date = date('mdy', $time);
+			$date_range[] = array($tag . $new_date, date('Y-m-d', $time));
+		}
+
+		// perform search per tag
+		foreach($date_range as $tag_to_search) {
+
+			$path = "http://search.twitter.com/search.json?q=" . $tag_to_search[0];
+			$file = getURL($path);
+			// copying from orig code... -- issues on 32b systems...?
+			$file = preg_replace("/\"([a-z_]+_)?id\":(\d+)(,|\}|\])/", "\"$1id\":\"$2\"$3", $file);
+			$json_data = json_decode($file);
+
+			if ($json_data !== NULL) {
+				if (count($json_data->results) > 0) {
+					// store results	
+					foreach($json_data->results as $tweet) {
+						// have to make my own query string since his entire tweet abstraction relies on a very specific tweet formatting
+						// not the same as search results
+						$tag_raw = substr($tag_to_search[0], 3);
+						$date_formatted = $tag_to_search[1];
+
+						$query_string = 'INSERT INTO `twittersearches` ' . 
+						'(`id`, `tag`, `event-date`, `created_at`, `entities`, `from_user`, `from_user_name`, ' .
+						'`from_user_id`, `from_user_id_str`, `geo`, `twitter_id`, `id_str`, `iso_language_code`, ' .
+						'`metadata`, `profile_image_url`, `profile_image_url_https`,`source`, `text`, `to_user`, ' .
+						'`to_user_name`,`to_user_id`, `to_user_id_str`) ' .
+						'VALUES ( ' .
+						'NULL, \'' . $db->s($tag_raw) . '\' , ' .
+						'\'' . $db->s($date_formatted) . '\', ' .
+						'\'' . $db->s($tweet->created_at) . '\', ' .
+						'\'' . $db->s(serialize($tweet->entities)) . '\', ' .
+						'\'' . $db->s($tweet->from_user) . '\', ' .
+						'\'' . $db->s($tweet->from_user_name) . '\', ' .
+						'\'' . $db->s($tweet->from_user_id) . '\', ' .
+						'\'' . $db->s($tweet->from_user_id_str) . '\', ' .
+						'\'' . $db->s(serialize($tweet->geo)) . '\', ' .
+						'\'' . $db->s($tweet->id) . '\', ' .
+						'\'' . $db->s($tweet->id_str) . '\', ' .
+						'\'' . $db->s($tweet->iso_language_code) . '\', ' .
+						'\'' . $db->s(serialize($tweet->metadata)) . '\', ' .
+						'\'' . $db->s($tweet->profile_image_url) . '\', ' .
+						'\'' . $db->s($tweet->profile_image_url_https) . '\', ' .
+						'\'' . $db->s($tweet->source) . '\', ' .
+						'\'' . $db->s($tweet->text) . '\', ' .
+						'\'' . $db->s($tweet->to_user) . '\', ' .
+						'\'' . $db->s($tweet->to_user_name) . '\', ' .
+						'\'' . $db->s($tweet->to_user_id) . '\', ' .
+						'\'' . $db->s($tweet->to_user_id_str) . '\');';
+
+						try {
+							echo "try insertion\n\n";
+
+							$q = $db->query($query_string);
+							if (!$q) {
+								// do we have an error
+								$errno = $db->errno();
+								if ($errno == 1062) {
+									echo "Duplicate record, continuing...\n\n";
+								}
+							} else {
+								echo "Success ... \n";
+							}
+							
+						} catch (Exception $e) {
+							echo "Real exception found !\n\n";
+							print_r($e);
+							mail("jlh2199@columbia.edu", "BAD EXCEPTION in maint / loadtweets for search results ...");
+						}
+					}
+				} else {
+					print "No results found for $path\n\n";
+				}
+			} else {
+				echo "Error: could not json_decode data ... \n\n";
+			}
+		}
 	}
 
 
@@ -207,6 +322,7 @@
 				$uid = preg_replace("/[^0-9]+/", "", $u['userid']);
 				echo l("<strong>Trying to grab from user_id=" . $uid . "...</strong>\n");
 				importTweets("user_id=" . $uid);
+				importSearchTweets("user_id=" . $uid);
 			}
 		} else {
 			echo l(bad("No users to import to!"));
