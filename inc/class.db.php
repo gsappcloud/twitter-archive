@@ -84,6 +84,10 @@
 			return $this->mysqli ? $this->res->error : mysql_error($this->res);
 		}
 		
+		public function errno(){
+			return $this->mysqli ? $this->res->errno : mysql_errno($this->res);
+		}
+
 		public function s($str){
 			return $this->mysqli ? $this->res->real_escape_string($str) : mysql_real_escape_string($str, $this->res);
 		}
